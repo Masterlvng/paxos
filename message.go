@@ -7,6 +7,7 @@ const (
 	Propose
 	Promise
 	Accept
+	AckAccept
 )
 
 type message struct {
@@ -15,6 +16,7 @@ type message struct {
 	n        int
 	prevn    int
 	value    string
+	accepted bool
 }
 
 func (m message) number() int {
@@ -41,6 +43,10 @@ func (m message) proposalNumber() int {
 	}
 }
 
+func (m message) res() bool {
+	return accepted
+}
+
 type promise interface {
 	number() int
 }
@@ -48,4 +54,9 @@ type promise interface {
 type accept interface {
 	proposalValue() string
 	proposalNumber() int
+}
+
+type ackaccept interface {
+	number() int
+	ack() bool
 }

@@ -30,6 +30,7 @@ func (a *acceptor) run() {
 		}
 		switch m.typ {
 		case Propose:
+			acceptres := m
 			accepted := a.receivePropose(m)
 			if accepted {
 				for _, l := range a.learners {
@@ -39,6 +40,9 @@ func (a *acceptor) run() {
 					a.nt.send(m)
 				}
 			}
+			acceptres.res = accepted
+			acceptres.typ = AckAccept
+			a.nt.send(acceptres)
 		case Prepare:
 			promise, ok := a.receivePrepare(m)
 			if ok {

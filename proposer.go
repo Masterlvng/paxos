@@ -14,6 +14,7 @@ type proposer struct {
 	valueN int
 
 	acceptors map[int]promise
+	acceptorN int
 	nt        network
 }
 
@@ -29,35 +30,43 @@ func (p *proposer) run() {
 	var ok bool
 	var m message
 
-	// stage 1: do prepare until reach the majority
-	for !p.majorityReached() {
-		if !ok {
-			ms := p.prepare()
-			for i := range ms {
-				p.nt.send(ms[i])
+	for {
+		// stage 1: do prepare until reach the majority
+		for !p.majorityReached() {
+			if !ok {
+				ms := p.prepare()
+				for i := range ms {
+					p.nt.send(ms[i])
+				}
+			}
+			m, ok = p.nt.recv(time.Second)
+			if !ok {
+				// the previous prepare is failed
+				// continue to do another prepare
+				continue
+			}
+
+			switch m.typ {
+			case Promise:
+				p.receivePromise(m)
+			default:
+				log.Panicf("proposer: %d unexpected message type: ", p.id, m.typ)
 			}
 		}
-		m, ok = p.nt.recv(time.Second)
-		if !ok {
-			// the previous prepare is failed
-			// continue to do another prepare
-			continue
+		log.Printf("proposer: %d promise %d reached majority %d", p.id, p.n(), p.majority())
+
+		// stage 2: do propose
+		log.Printf("proposer: %d starts to propose [%d: %s]", p.id, p.n(), p.value)
+		ms := p.propose()
+		for i := range ms {
+			p.nt.send(ms[i])
 		}
 
-		switch m.typ {
-		case Promise:
-			p.receivePromise(m)
-		default:
-			log.Panicf("proposer: %d unexpected message type: ", p.id, m.typ)
+		// stage 3: recv accepted
+		if p.waitAckAccept() {
+			break
 		}
-	}
-	log.Printf("proposer: %d promise %d reached majority %d", p.id, p.n(), p.majority())
-
-	// stage 2: do propose
-	log.Printf("proposer: %d starts to propose [%d: %s]", p.id, p.n(), p.value)
-	ms := p.propose()
-	for i := range ms {
-		p.nt.send(ms[i])
+		p.lastSeq++
 	}
 }
 
@@ -115,6 +124,26 @@ func (p *proposer) receivePromise(promise message) {
 			p.value = promise.proposalValue()
 		}
 	}
+}
+
+func (p *proposer) waitAckAccept() bool {
+	var m message
+	var ok bool
+	ack := 0
+	for i := 0; i < len(p.acceptors); i++ {
+		m, ok = p.nt.recv(time.Second)
+		if m.typ == AckAccept {
+			if m.n == p.n() {
+				if m.res() {
+					ack++
+					if ack >= p.majority() {
+						return true
+					}
+				}
+			}
+		}
+	}
+	return false
 }
 
 func (p *proposer) majority() int { return len(p.acceptors)/2 + 1 }
